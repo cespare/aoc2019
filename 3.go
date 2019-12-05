@@ -94,7 +94,7 @@ func parseWireDir(s string) (v ivec2, n int64, err error) {
 	case 'R':
 		v = ivec2{x: 1}
 	default:
-		return ivec2{}, 0, fmt.Errorf("unknown dir %s", dir)
+		return ivec2{}, 0, fmt.Errorf("unknown dir %c", dir)
 	}
 	n, err = strconv.ParseInt(s[1:], 10, 64)
 	if err != nil {
