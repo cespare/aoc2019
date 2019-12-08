@@ -28,18 +28,12 @@ func problem5(ctx *problemContext) {
 	}
 	ctx.reportLoad()
 
-	ic := &intcode2{
-		input: []int64{1},
-		state: append([]int64(nil), program...),
-	}
+	ic := newIntcode2(program, 1)
 	ic.run()
 
 	ctx.reportPart1(ic.output)
 
-	ic = &intcode2{
-		input: []int64{5},
-		state: append([]int64(nil), program...),
-	}
+	ic = newIntcode2(program, 5)
 	ic.run()
 
 	ctx.reportPart1(ic.output)
@@ -51,6 +45,24 @@ type intcode2 struct {
 
 	input  []int64
 	output []int64
+
+	inCh  chan int64
+	outCh chan int64
+}
+
+func newIntcode2(prog []int64, input ...int64) *intcode2 {
+	return &intcode2{
+		input: input,
+		state: append([]int64(nil), prog...),
+	}
+}
+
+func (ic *intcode2) setChannelMode() {
+	if len(ic.input) > 0 || len(ic.output) > 0 {
+		panic("cannot set channel mode after using input/output slices")
+	}
+	ic.inCh = make(chan int64, 1)
+	ic.outCh = make(chan int64, 1)
 }
 
 const (
@@ -127,15 +139,24 @@ func (ic *intcode2) step() (done bool) {
 		b := ic.get(modes[1])
 		ic.set(a*b, modes[2])
 	case opInput:
-		v := ic.input[0]
-		ic.input = ic.input[1:]
+		var v int64
+		if ic.inCh == nil {
+			v = ic.input[0]
+			ic.input = ic.input[1:]
+		} else {
+			v = <-ic.inCh
+		}
 		ic.set(v, modes[0])
 	case opOutput:
-		if len(ic.output) >= 1e6 {
-			panic("output exploded")
-		}
 		v := ic.get(modes[0])
-		ic.output = append(ic.output, v)
+		if ic.outCh == nil {
+			if len(ic.output) >= 1e6 {
+				panic("output exploded")
+			}
+			ic.output = append(ic.output, v)
+		} else {
+			ic.outCh <- v
+		}
 	case opJumpTrue:
 		v := ic.get(modes[0])
 		targ := ic.get(modes[1])
@@ -165,6 +186,9 @@ func (ic *intcode2) step() (done bool) {
 		}
 		ic.set(v, modes[2])
 	case opHalt:
+		if ic.outCh != nil {
+			close(ic.outCh)
+		}
 		return true
 	default:
 		panic("bad state")
