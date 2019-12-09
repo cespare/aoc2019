@@ -1,7 +1,5 @@
 package main
 
-import "fmt"
-
 func init() {
 	addSolutions(4, problem4)
 }
@@ -14,10 +12,6 @@ func problem4(ctx *problemContext) {
 		}
 	}
 	ctx.reportPart1(combos)
-
-	fmt.Printf("\033[01;34m>>>> passwordOK2(112233): %v\x1B[m\n", passwordOK2(112233))
-	fmt.Printf("\033[01;34m>>>> passwordOK2(123444): %v\x1B[m\n", passwordOK2(123444))
-	fmt.Printf("\033[01;34m>>>> passwordOK2(111122): %v\x1B[m\n", passwordOK2(111122))
 
 	combos = 0
 	for n := 372304; n <= 847060; n++ {
