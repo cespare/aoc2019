@@ -33,5 +33,5 @@ func problem9(ctx *problemContext) {
 
 	ic = newIntcodeWithMem(prog, 2)
 	ic.run()
-	ctx.reportPart1(ic.output)
+	ctx.reportPart2(ic.output)
 }
