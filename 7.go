@@ -59,7 +59,7 @@ func problem7(ctx *problemContext) {
 func evalAmps(prog []int64, phases []int) int64 {
 	var val int64
 	for _, phase := range phases {
-		ic := newIntcode2(prog, int64(phase), val)
+		ic := newIntcode(prog, int64(phase), val)
 		ic.run()
 		if len(ic.output) != 1 {
 			panic("bad output")
@@ -70,10 +70,10 @@ func evalAmps(prog []int64, phases []int) int64 {
 }
 
 func evalFeedbackAmps(prog []int64, phases []int) int64 {
-	ics := make([]*intcode2, len(phases))
+	ics := make([]*intcode, len(phases))
 	vals := make([]int64, len(phases))
 	for i := range ics {
-		ic := newIntcode2(prog)
+		ic := newIntcode(prog)
 		ic.setChannelMode()
 		go ic.run()
 		ics[i] = ic

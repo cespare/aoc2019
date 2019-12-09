@@ -9,30 +9,29 @@ import (
 )
 
 func init() {
-	addSolutions(5, problem5)
+	addSolutions(9, problem9)
 }
 
-func problem5(ctx *problemContext) {
+func problem9(ctx *problemContext) {
 	line, err := ioutil.ReadAll(ctx.f)
 	if err != nil {
 		log.Fatal(err)
 	}
-	var program []int64
+	var prog []int64
 	for _, s := range strings.Split(string(bytes.TrimSpace(line)), ",") {
 		n, err := strconv.ParseInt(s, 10, 64)
 		if err != nil {
 			log.Fatalln("Bad number:", s)
 		}
-		program = append(program, n)
+		prog = append(prog, n)
 	}
 	ctx.reportLoad()
 
-	ic := newIntcode(program, 1)
+	ic := newIntcodeWithMem(prog, 1)
 	ic.run()
 	ctx.reportPart1(ic.output)
 
-	ic = newIntcode(program, 5)
+	ic = newIntcodeWithMem(prog, 2)
 	ic.run()
-
 	ctx.reportPart1(ic.output)
 }
