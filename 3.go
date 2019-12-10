@@ -114,6 +114,13 @@ func (v ivec2) add(v1 ivec2) ivec2 {
 	}
 }
 
+func (v ivec2) sub(v1 ivec2) ivec2 {
+	return ivec2{
+		x: v.x - v1.x,
+		y: v.y - v1.y,
+	}
+}
+
 func (v ivec2) len() int64 {
 	return iabs(v.x) + iabs(v.y)
 }
