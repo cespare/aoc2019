@@ -17,7 +17,7 @@ func problem6(ctx *problemContext) {
 	for scanner.Scan() {
 		parts := strings.Split(scanner.Text(), ")")
 		if len(parts) != 2 {
-			log.Fatal("bad orbit line: %q", scanner.Text())
+			log.Fatalf("bad orbit line: %q", scanner.Text())
 		}
 		g.add(parts[1], parts[0])
 		allNodes[parts[0]] = struct{}{}
