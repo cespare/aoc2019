@@ -36,10 +36,16 @@ type intcode struct {
 
 	inCh  chan int64
 	outCh chan int64
+
+	suspendMode bool
+}
+
+func copyInt64s(s []int64) []int64 {
+	return append([]int64(nil), s...)
 }
 
 func newIntcodeWithMem(prog []int64, input ...int64) *intcode {
-	mem := make([]int64, 1e6)
+	mem := make([]int64, 10e3)
 	copy(mem, prog)
 	return &intcode{input: input, mem: mem}
 }
@@ -57,6 +63,13 @@ func (ic *intcode) setChannelMode() {
 	}
 	ic.inCh = make(chan int64, 1)
 	ic.outCh = make(chan int64, 1)
+}
+
+func (ic *intcode) setSuspendMode() {
+	if ic.inCh != nil {
+		panic("cannot use suspend mode with channel mode")
+	}
+	ic.suspendMode = true
 }
 
 const (
@@ -118,12 +131,30 @@ func (ic *intcode) decode(inst int64) (modes []int, opcode int) {
 	return modes, opcode
 }
 
-func (ic *intcode) run() {
-	for !ic.step() {
+func (ic *intcode) run() (halted bool) {
+	for {
+		switch ic.step() {
+		case stateRunning:
+		case stateSuspend:
+			if !ic.suspendMode {
+				panic("ran out of input (not in suspend mode)")
+			}
+			return false
+		case stateHalt:
+			return true
+		}
 	}
 }
 
-func (ic *intcode) step() (done bool) {
+type intcodeState int
+
+const (
+	stateRunning intcodeState = iota
+	stateSuspend
+	stateHalt
+)
+
+func (ic *intcode) step() intcodeState {
 	modes, opcode := ic.decode(ic.mem[ic.pc])
 	ic.pc++
 	switch opcode {
@@ -138,6 +169,10 @@ func (ic *intcode) step() (done bool) {
 	case opInput:
 		var v int64
 		if ic.inCh == nil {
+			if len(ic.input) == 0 {
+				ic.pc--
+				return stateSuspend
+			}
 			v = ic.input[0]
 			ic.input = ic.input[1:]
 		} else {
@@ -188,11 +223,11 @@ func (ic *intcode) step() (done bool) {
 		if ic.outCh != nil {
 			close(ic.outCh)
 		}
-		return true
+		return stateHalt
 	default:
 		panic("bad state")
 	}
-	return false
+	return stateRunning
 }
 
 func (ic *intcode) get(mode int) int64 {
