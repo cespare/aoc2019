@@ -1,30 +1,11 @@
 package main
 
-import (
-	"bytes"
-	"io/ioutil"
-	"log"
-	"strconv"
-	"strings"
-)
-
 func init() {
 	addSolutions(13, problem13)
 }
 
 func problem13(ctx *problemContext) {
-	line, err := ioutil.ReadAll(ctx.f)
-	if err != nil {
-		log.Fatal(err)
-	}
-	var prog []int64
-	for _, s := range strings.Split(string(bytes.TrimSpace(line)), ",") {
-		n, err := strconv.ParseInt(s, 10, 64)
-		if err != nil {
-			log.Fatalln("Bad number:", s)
-		}
-		prog = append(prog, n)
-	}
+	prog := readProg(ctx.f)
 	ctx.reportLoad()
 
 	ic := newIntcodeWithMem(prog)
