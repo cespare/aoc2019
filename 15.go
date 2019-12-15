@@ -8,14 +8,22 @@ func problem15(ctx *problemContext) {
 	prog := readProg(ctx.f)
 	ctx.reportLoad()
 
+	type qstate struct {
+		ic    *intcode
+		steps int
+		pos   ivec2
+	}
+
 	var oxygen ivec2
 	visited := map[ivec2]struct{}{{0, 0}: {}}
-	q := []pathAndPosition{{nil, ivec2{0, 0}}}
+	ic := newIntcodeWithMem(prog)
+	ic.setSuspendMode()
+	q := []qstate{{ic, 0, ivec2{0, 0}}}
 	for len(q) > 0 {
 		pp := q[0]
 		q = q[1:]
-	dirLoop:
 		for d1 := int64(1); d1 <= 4; d1++ {
+			steps := pp.steps + 1
 			pos := pp.pos
 			switch d1 {
 			case dirNorth:
@@ -33,24 +41,25 @@ func problem15(ctx *problemContext) {
 				continue
 			}
 
-			path := append(copyInt64s(pp.path), d1)
-			result := evalRepairPath(prog, path)
+			ic := pp.ic.clone()
+			result := evalRepairPath(ic, d1)
 			switch result {
 			case 0:
-				continue dirLoop
+				continue
 			case 1:
 			case 2:
 				if oxygen != (ivec2{0, 0}) {
 					panic("multiple oxygens")
 				}
-				ctx.reportPart1(len(path))
+				ctx.reportPart1(steps)
 				oxygen = pos
 			default:
 				panic("bad output")
 			}
 			visited[pos] = struct{}{}
-			q = append(q, pathAndPosition{path, pos})
+			q = append(q, qstate{ic, steps, pos})
 		}
+		pp.ic.free()
 
 	}
 	if oxygen == (ivec2{0, 0}) {
@@ -67,24 +76,15 @@ const (
 	dirEast  = 4
 )
 
-type pathAndPosition struct {
-	path []int64
-	pos  ivec2
-}
-
-func evalRepairPath(prog, path []int64) int64 {
-	ic := newIntcodeWithMem(prog, copyInt64s(path)...)
-	ic.setSuspendMode()
+func evalRepairPath(ic *intcode, d int64) int64 {
+	ic.input = append(ic.input, d)
 	ic.run()
-	if len(ic.output) != len(path) {
-		panic("mismatched output")
+	if len(ic.output) != 1 {
+		panic("bad")
 	}
-	for _, d := range ic.output[:len(ic.output)-1] {
-		if d == 0 {
-			panic("unexpectedly got wall")
-		}
-	}
-	return ic.output[len(ic.output)-1]
+	r := ic.output[0]
+	ic.output = ic.output[:0]
+	return r
 }
 
 func findDepth(m map[ivec2]struct{}, start ivec2) int64 {

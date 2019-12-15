@@ -8,6 +8,7 @@ import (
 	"log"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 func readProg(r io.Reader) []int64 {
@@ -258,4 +259,42 @@ func (ic *intcode) set(val int64, mode int) {
 	default:
 		panic("bad mode")
 	}
+}
+
+var intcodePool sync.Pool
+
+func (ic *intcode) free() {
+	intcodePool.Put(ic)
+}
+
+func (ic *intcode) clone() *intcode {
+	if ic.inCh != nil {
+		panic("cannot clone channel mode intcode")
+	}
+	x := intcodePool.Get()
+	if x == nil {
+		ic1 := *ic
+		ic1.mem = copyInt64s(ic.mem)
+		ic1.input = copyInt64s(ic.input)
+		ic1.output = copyInt64s(ic.output)
+		return &ic1
+	}
+
+	cloneInt64s := func(p0, p1 *[]int64) {
+		if cap(*p0) < len(*p1) {
+			*p0 = make([]int64, len(*p1))
+		} else {
+			*p0 = (*p0)[:len(*p1)]
+		}
+		copy(*p0, *p1)
+	}
+
+	ic1 := x.(*intcode)
+	cloneInt64s(&ic1.mem, &ic.mem)
+	cloneInt64s(&ic1.input, &ic.input)
+	cloneInt64s(&ic1.output, &ic.output)
+	ic1.pc = ic.pc
+	ic1.relBase = ic.relBase
+	ic1.suspendMode = ic.suspendMode
+	return ic1
 }
