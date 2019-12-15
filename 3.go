@@ -28,55 +28,49 @@ func problem3(ctx *problemContext) {
 	}
 	ctx.reportLoad()
 
-	m0, err := wireToDist(wires[0])
-	if err != nil {
-		log.Fatal(err)
-	}
-	m1, err := wireToDist(wires[1])
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	var best int64
-	for v := range m0 {
-		if _, ok := m1[v]; ok {
-			if best == 0 || v.len() < best {
-				best = v.len()
-			}
-		}
-	}
-
-	ctx.reportPart1(best)
-
-	best = 0
-	for v, d0 := range m0 {
-		if d1, ok := m1[v]; ok {
-			d := d0 + d1
-			if best == 0 || d < best {
-				best = d
-			}
-		}
-	}
-
-	ctx.reportPart2(best)
-}
-
-func wireToDist(w []string) (map[ivec2]int64, error) {
-	m := make(map[ivec2]int64)
+	m0 := make(map[ivec2]int64, 200e3)
 	var v ivec2
-	d := int64(1)
-	for _, s := range w {
+	d0 := int64(1)
+	for _, s := range wires[0] {
 		vd, n, err := parseWireDir(s)
 		if err != nil {
-			return nil, err
+			log.Fatal(err)
 		}
 		for i := int64(0); i < n; i++ {
 			v = v.add(vd)
-			m[v] = d
-			d++
+			m0[v] = d0
+			d0++
 		}
 	}
-	return m, nil
+
+	v = ivec2{0, 0}
+	d1 := int64(1)
+	var bestPart1, bestPart2 int64
+	for _, s := range wires[1] {
+		vd, n, err := parseWireDir(s)
+		if err != nil {
+			log.Fatal(err)
+		}
+		for i := int64(0); i < n; i++ {
+			v = v.add(vd)
+
+			if d0, ok := m0[v]; ok {
+				if bestPart1 == 0 || v.len() < bestPart1 {
+					bestPart1 = v.len()
+				}
+				d := d0 + d1
+				if bestPart2 == 0 || d < bestPart2 {
+					bestPart2 = d
+				}
+			}
+
+			d1++
+		}
+
+	}
+
+	ctx.reportPart1(bestPart1)
+	ctx.reportPart2(bestPart2)
 }
 
 func parseWireDir(s string) (v ivec2, n int64, err error) {
