@@ -96,18 +96,16 @@ func (m moons) energy(i int) int64 {
 }
 
 func cycleLength(p, v [4]int64) int64 {
-	seen := make(map[[8]int64]int64)
+	var initial [8]int64
+	copy(initial[:4], p[:])
+	copy(initial[4:], v[:])
 	var state [8]int64
 	for i := int64(0); ; i++ {
 		copy(state[:4], p[:])
 		copy(state[4:], v[:])
-		if x, ok := seen[state]; ok {
-			if x != 0 {
-				panic("not handled")
-			}
+		if i > 0 && state == initial {
 			return i
 		}
-		seen[state] = i
 		applyGravSingle(&p, &v)
 		for j, vv := range v {
 			p[j] += vv
@@ -124,40 +122,21 @@ func applyGravSingle(p, v *[4]int64) {
 	}
 }
 
-func factor(n int64) map[int64]int {
-	factors := make(map[int64]int)
-outer:
-	for n > 1 {
-		for p := int64(2); p*p <= n; p++ {
-			if n%p == 0 {
-				factors[p]++
-				n /= p
-				continue outer
-			}
-		}
-		factors[n]++
-		break
+func gcd(m, n int64) int64 {
+	if m <= 0 || n <= 0 {
+		panic("only positive handled")
 	}
-	return factors
+	switch {
+	case m == n:
+		return n
+	case m > n:
+		return gcd(m-n, n)
+	default:
+		return gcd(m, n-m)
+	}
+
 }
 
 func lcm(m, n int64) int64 {
-	fm, fn := factor(m), factor(n)
-	result := int64(1)
-	for p, cm := range fm {
-		c := fn[p]
-		if c < cm {
-			c = cm
-		}
-		for i := 0; i < c; i++ {
-			result *= p
-		}
-		delete(fn, p)
-	}
-	for p, c := range fn {
-		for i := 0; i < c; i++ {
-			result *= p
-		}
-	}
-	return result
+	return m * n / gcd(m, n)
 }
