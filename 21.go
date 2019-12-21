@@ -14,8 +14,7 @@ func problem21(ctx *problemContext) {
 	ctx.reportLoad()
 
 	spring := `
-NOT J J
-AND A J
+OR A J
 AND B J
 AND C J
 NOT J J
@@ -25,8 +24,7 @@ WALK
 	ctx.reportPart1(runSpring(prog, spring))
 
 	spring = `
-NOT J J
-AND A J
+OR A J
 AND B J
 AND C J
 NOT J J
