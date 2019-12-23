@@ -43,47 +43,32 @@ func problem7(ctx *problemContext) {
 func evalAmps(prog []int64, phases []int) int64 {
 	var val int64
 	for _, phase := range phases {
-		ic := newIntcode(prog, int64(phase), val)
+		ic := newIntcode(prog)
+		ic.setInput(int64(phase), val)
+		ic.setOutputLastVal(&val)
 		ic.run()
-		if len(ic.output) != 1 {
-			panic("bad output")
-		}
-		val = ic.output[0]
 	}
 	return val
 }
 
 func evalFeedbackAmps(prog []int64, phases []int) int64 {
-	ics := make([]*intcode, len(phases))
-	vals := make([]int64, len(phases))
-	for i := range ics {
-		ic := newIntcode(prog)
-		ic.setChannelMode()
-		go ic.run()
-		ics[i] = ic
+	chs := make([]chan int64, len(phases))
+	for i := range chs {
+		chs[i] = make(chan int64, 1)
 	}
 	var wg sync.WaitGroup
-	for i, ic := range ics {
-		i := i
-		ic0 := ic
-		j := i + 1
-		if j == len(ics) {
-			j = 0
-		}
-		ic1 := ics[j]
+	for i, ch := range chs {
+		ic := newIntcode(prog)
+		ic.setInput(int64(phases[i]))
+		ic.setInputChan(ch)
+		ic.setOutputChan(chs[(i+1)%len(phases)])
 		wg.Add(1)
 		go func() {
-			defer wg.Done()
-			for v := range ic0.outCh {
-				vals[i] = v
-				ic1.inCh <- v
-			}
+			ic.run()
+			wg.Done()
 		}()
 	}
-	for i, phase := range phases {
-		ics[i].inCh <- int64(phase)
-	}
-	ics[0].inCh <- 0
+	chs[0] <- 0
 	wg.Wait()
-	return vals[len(vals)-1]
+	return <-chs[0]
 }

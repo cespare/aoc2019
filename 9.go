@@ -8,11 +8,16 @@ func problem9(ctx *problemContext) {
 	prog := readProg(ctx.f)
 	ctx.reportLoad()
 
-	ic := newIntcodeWithMem(prog, 1)
+	ic := newIntcode(prog)
+	ic.setInput(1)
+	var val int64
+	ic.setOutputLastVal(&val)
 	ic.run()
-	ctx.reportPart1(ic.output)
+	ctx.reportPart1(val)
 
-	ic = newIntcodeWithMem(prog, 2)
+	ic = newIntcode(prog)
+	ic.setInput(2)
+	ic.setOutputLastVal(&val)
 	ic.run()
-	ctx.reportPart2(ic.output)
+	ctx.reportPart2(val)
 }

@@ -10,7 +10,7 @@ func problem19(ctx *problemContext) {
 	prog := readProg(ctx.f)
 	ctx.reportLoad()
 
-	ic := newIntcodeWithMem(prog)
+	ic := newIntcode(prog)
 	const print = false
 	var tractorPoints int
 	for y := int64(0); y < 50; y++ {
@@ -62,12 +62,11 @@ func problem19(ctx *problemContext) {
 func inTractorBeam(ic *intcode, p ivec2) bool {
 	ic = ic.clone()
 	defer ic.free()
-	ic.input = []int64{p.x, p.y}
+	ic.setInput(p.x, p.y)
+	var r int64
+	ic.setOutputLastVal(&r)
 	ic.run()
-	if len(ic.output) != 1 {
-		panic("bad")
-	}
-	switch ic.output[0] {
+	switch r {
 	case 0:
 		return false
 	case 1:

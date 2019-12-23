@@ -23,25 +23,30 @@ func problem11(ctx *problemContext) {
 }
 
 func paintHull(prog []int64, colors map[ivec2]int64) {
-	ic := newIntcodeWithMem(prog)
-	ic.setChannelMode()
-	go ic.run()
+	ic := newIntcode(prog)
+	in := make(chan int64)
+	out := make(chan int64)
+	ic.setInputChan(in)
+	ic.setOutputChan(out)
+	done := make(chan struct{})
+	go func() {
+		ic.run()
+		close(done)
+	}()
 	var p ivec2
 	dir := ivec2{0, 1}
 	for {
-		ic.inCh <- colors[p]
-
-		color := <-ic.outCh
-		t, ok := <-ic.outCh
-
-		colors[p] = color
-
-		dir = turn(dir, t)
-		p = p.add(dir)
-
-		if !ok {
+		select {
+		case in <- colors[p]:
+		case <-done:
 			return
 		}
+
+		color := <-out
+		t := <-out
+		colors[p] = color
+		dir = turn(dir, t)
+		p = p.add(dir)
 	}
 }
 

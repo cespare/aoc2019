@@ -8,11 +8,13 @@ func problem17(ctx *problemContext) {
 	prog := readProg(ctx.f)
 	ctx.reportLoad()
 
-	ic := newIntcodeWithMem(prog)
+	ic := newIntcode(prog)
+	var output []int64
+	ic.setOutputAll(&output)
 	ic.run()
 	var pic [][]byte
 	var row []byte
-	for _, n := range ic.output {
+	for _, n := range output {
 		c := byte(n)
 		if c == '\n' {
 			if len(row) > 0 {
@@ -26,9 +28,6 @@ func problem17(ctx *problemContext) {
 	if len(row) > 0 {
 		pic = append(pic, row)
 	}
-	// for _, row := range pic {
-	// 	fmt.Println(string(row))
-	// }
 	var part1 int
 	for y, row := range pic {
 		for x, c := range row {
@@ -145,9 +144,12 @@ n
 	for i, c := range ascii {
 		input[i] = int64(c)
 	}
-	ic = newIntcodeWithMem(prog, input...)
+	ic = newIntcode(prog)
+	ic.setInput(input...)
+	var part2 int64
+	ic.setOutputLastVal(&part2)
 	ic.run()
-	ctx.reportPart2(ic.output[len(ic.output)-1])
+	ctx.reportPart2(part2)
 }
 
 func turnDir(dir0, dir1 int) string {

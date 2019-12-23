@@ -16,8 +16,7 @@ func problem15(ctx *problemContext) {
 
 	var oxygen ivec2
 	visited := map[ivec2]struct{}{{0, 0}: {}}
-	ic := newIntcodeWithMem(prog)
-	ic.setSuspendMode()
+	ic := newIntcode(prog)
 	q := []qstate{{ic, 0, ivec2{0, 0}}}
 	for len(q) > 0 {
 		pp := q[0]
@@ -77,13 +76,12 @@ const (
 )
 
 func evalRepairPath(ic *intcode, d int64) int64 {
-	ic.input = append(ic.input, d)
-	ic.run()
-	if len(ic.output) != 1 {
-		panic("bad")
+	ic.setInput(d)
+	var r int64
+	ic.setOutputLastVal(&r)
+	if ic.runUntilInput() {
+		panic("halted")
 	}
-	r := ic.output[0]
-	ic.output = ic.output[:0]
 	return r
 }
 

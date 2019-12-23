@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"sync"
 	"sync/atomic"
@@ -85,7 +84,7 @@ type netComputer struct {
 	in   []int64
 	out  []int64
 	idle int64
-	ic   *intcode2
+	ic   *intcode
 }
 
 func (nw *network) addComputer(prog []int64, addr int64) *netComputer {
@@ -94,26 +93,28 @@ func (nw *network) addComputer(prog []int64, addr int64) *netComputer {
 		addr: addr,
 	}
 	nw.cs[addr] = c
-	inFunc := func() []int64 {
+	c.ic = newIntcode(prog)
+	c.ic.setInput(addr)
+	c.ic.in = func(buf []int64) []int64 {
 		if addr >= 0 {
-			r := []int64{addr}
+			buf = append(buf, addr)
 			addr = -1
-			return r
+			return buf
 		}
 		c.mu.Lock()
 		if len(c.in) > 0 {
 			atomic.SwapInt64(&c.idle, 0)
-			r := c.in
-			c.in = nil
+			buf = append(buf, c.in...)
+			c.in = c.in[:0]
 			c.mu.Unlock()
-			return r
+			return buf
 		}
 		c.mu.Unlock()
 		time.Sleep(500 * time.Microsecond)
 		atomic.AddInt64(&c.idle, 1)
-		return []int64{-1}
+		return append(buf, -1)
 	}
-	outFunc := func(v int64) {
+	c.ic.out = func(v int64) {
 		c.out = append(c.out, v)
 		if len(c.out) < 3 {
 			return
@@ -122,7 +123,6 @@ func (nw *network) addComputer(prog []int64, addr int64) *netComputer {
 		// log.Printf("computer %d sending {%d, %d} to %d", c.addr, x, y, addr)
 		c.out = c.out[:0]
 		if addr == 255 {
-			fmt.Printf("\033[01;34m>>>> y: %v\x1B[m\n", y)
 			c.nw.natMu.Lock()
 			c.nw.nat = &packet{x, y}
 			c.nw.natMu.Unlock()
@@ -133,8 +133,6 @@ func (nw *network) addComputer(prog []int64, addr int64) *netComputer {
 		peer.in = append(peer.in, x, y)
 		peer.mu.Unlock()
 	}
-	c.ic = newIntcode2WithMem(prog, addr)
-	c.ic.setCallbackMode(inFunc, outFunc)
 	return c
 }
 

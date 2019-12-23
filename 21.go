@@ -38,20 +38,20 @@ RUN
 }
 
 func runSpring(prog []int64, spring string) string {
-	ic := newIntcodeWithMem(prog)
-	for _, c := range []byte(spring[1:]) {
-		ic.input = append(ic.input, int64(c))
+	ic := newIntcode(prog)
+	input := make([]int64, len(spring)-1)
+	for i := 1; i < len(spring); i++ {
+		input[i-1] = int64(spring[i])
 	}
-	if !ic.run() {
-		panic("need more input")
-	}
+	ic.setInput(input...)
 	var out strings.Builder
-	for _, n := range ic.output {
+	ic.out = func(n int64) {
 		if n >= 0 && n < 256 {
 			out.WriteByte(byte(n))
 		} else {
 			fmt.Fprintf(&out, "%d", n)
 		}
 	}
+	ic.run()
 	return out.String()
 }

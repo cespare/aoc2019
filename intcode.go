@@ -27,52 +27,6 @@ func readProg(r io.Reader) []int64 {
 	return prog
 }
 
-type intcode struct {
-	mem     []int64
-	pc      int
-	relBase int64
-
-	input  []int64
-	output []int64
-
-	inCh  chan int64
-	outCh chan int64
-
-	suspendMode bool
-}
-
-func copyInt64s(s []int64) []int64 {
-	return append([]int64(nil), s...)
-}
-
-func newIntcodeWithMem(prog []int64, input ...int64) *intcode {
-	mem := make([]int64, 10e3)
-	copy(mem, prog)
-	return &intcode{input: input, mem: mem}
-}
-
-func newIntcode(prog []int64, input ...int64) *intcode {
-	return &intcode{
-		input: input,
-		mem:   append([]int64(nil), prog...),
-	}
-}
-
-func (ic *intcode) setChannelMode() {
-	if len(ic.input) > 0 || len(ic.output) > 0 {
-		panic("cannot set channel mode after using input/output slices")
-	}
-	ic.inCh = make(chan int64, 1)
-	ic.outCh = make(chan int64, 1)
-}
-
-func (ic *intcode) setSuspendMode() {
-	if ic.inCh != nil {
-		panic("cannot use suspend mode with channel mode")
-	}
-	ic.suspendMode = true
-}
-
 const (
 	opAdd       = 1
 	opMul       = 2
@@ -86,7 +40,7 @@ const (
 	opHalt      = 99
 )
 
-func (ic *intcode) decode(inst int64) (modes []int, opcode int) {
+func decodeIntcode(inst int64) (modes []int, opcode int) {
 	if inst < 0 {
 		panic("bad instruction")
 	}
@@ -132,17 +86,92 @@ func (ic *intcode) decode(inst int64) (modes []int, opcode int) {
 	return modes, opcode
 }
 
-func (ic *intcode) run() (halted bool) {
+const maxIntcodeMem = 1e6
+
+type intcodeOpt uint
+
+const (
+	optRun intcodeOpt = 1 << iota
+	optRunUntilInput
+)
+
+type intcode struct {
+	prog    []int64
+	mem     []int64
+	pc      int64
+	relBase int64
+
+	opt   intcodeOpt
+	in    func([]int64) []int64 // append-style
+	inBuf []int64
+	out   func(int64)
+}
+
+func newIntcode(prog []int64) *intcode {
+	return &intcode{
+		prog: copyInt64s(prog),
+		mem:  make([]int64, 8),
+		out: func(int64) {
+			panic("encountered output instruction; no out function set")
+		},
+	}
+}
+
+func (ic *intcode) setInput(ns ...int64) {
+	if ic.opt&optRun != 0 {
+		panic("setInitialInput called after run was called")
+	}
+	ic.inBuf = ns
+}
+
+func (ic *intcode) setOutputAll(p *[]int64) {
+	ic.out = func(v int64) { *p = append(*p, v) }
+}
+
+func (ic *intcode) setOutputLastVal(p *int64) {
+	ic.out = func(v int64) { *p = v }
+}
+
+func (ic *intcode) setInputChan(ch chan int64) {
+	ic.in = func(buf []int64) []int64 { return append(buf, <-ch) }
+}
+
+func (ic *intcode) setOutputChan(ch chan int64) {
+	ic.out = func(v int64) { ch <- v }
+}
+
+func (ic *intcode) runUntilInput() (halt bool) {
+	if ic.opt&optRun != 0 {
+		panic("runUntilInput called after run was previously called")
+	}
+	if ic.in != nil {
+		panic("runUntilInput called after in was already set")
+	}
+	ic.opt |= optRunUntilInput
 	for {
-		switch ic.step() {
+		switch ic.step(true) {
 		case stateRunning:
 		case stateSuspend:
-			if !ic.suspendMode {
-				panic("ran out of input (not in suspend mode)")
-			}
 			return false
 		case stateHalt:
 			return true
+		}
+	}
+}
+
+func (ic *intcode) run() {
+	if ic.opt&(optRun|optRunUntilInput) != 0 {
+		panic("run called after run or runUntilInput was already called")
+	}
+	if ic.in == nil {
+		ic.in = func([]int64) []int64 {
+			panic("encountered input instruction; no in function set")
+		}
+	}
+	ic.opt |= optRun
+	for {
+		if ic.step(false) == stateHalt {
+			return
 		}
 	}
 }
@@ -155,8 +184,8 @@ const (
 	stateHalt
 )
 
-func (ic *intcode) step() intcodeState {
-	modes, opcode := ic.decode(ic.mem[ic.pc])
+func (ic *intcode) step(waitForInput bool) intcodeState {
+	modes, opcode := decodeIntcode(ic.prog[ic.pc])
 	ic.pc++
 	switch opcode {
 	case opAdd:
@@ -168,39 +197,32 @@ func (ic *intcode) step() intcodeState {
 		b := ic.get(modes[1])
 		ic.set(a*b, modes[2])
 	case opInput:
-		var v int64
-		if ic.inCh == nil {
-			if len(ic.input) == 0 {
+		if len(ic.inBuf) == 0 {
+			if waitForInput {
 				ic.pc--
 				return stateSuspend
 			}
-			v = ic.input[0]
-			ic.input = ic.input[1:]
-		} else {
-			v = <-ic.inCh
+			ic.inBuf = ic.in(ic.inBuf)
+			if len(ic.inBuf) == 0 {
+				panic("ic.in gave no input")
+			}
 		}
+		v := ic.inBuf[0]
+		ic.inBuf = ic.inBuf[1:]
 		ic.set(v, modes[0])
 	case opOutput:
-		v := ic.get(modes[0])
-		if ic.outCh == nil {
-			if len(ic.output) >= 1e6 {
-				panic("output exploded")
-			}
-			ic.output = append(ic.output, v)
-		} else {
-			ic.outCh <- v
-		}
+		ic.out(ic.get(modes[0]))
 	case opJumpTrue:
 		v := ic.get(modes[0])
 		targ := ic.get(modes[1])
 		if v != 0 {
-			ic.pc = int(targ)
+			ic.pc = targ
 		}
 	case opJumpFalse:
 		v := ic.get(modes[0])
 		targ := ic.get(modes[1])
 		if v == 0 {
-			ic.pc = int(targ)
+			ic.pc = targ
 		}
 	case opLess:
 		a := ic.get(modes[0])
@@ -221,9 +243,6 @@ func (ic *intcode) step() intcodeState {
 	case opSetRel:
 		ic.relBase += ic.get(modes[0])
 	case opHalt:
-		if ic.outCh != nil {
-			close(ic.outCh)
-		}
 		return stateHalt
 	default:
 		panic("bad state")
@@ -232,69 +251,102 @@ func (ic *intcode) step() intcodeState {
 }
 
 func (ic *intcode) get(mode int) int64 {
-	param := ic.mem[ic.pc]
+	param := ic.prog[ic.pc]
 	ic.pc++
+	off := param
 	switch mode {
 	case 0:
-		return ic.mem[param]
 	case 1:
 		return param
 	case 2:
-		return ic.mem[ic.relBase+param]
+		off += ic.relBase
 	default:
 		panic("bad mode")
 	}
+	if off < int64(len(ic.prog)) {
+		return ic.prog[off]
+	}
+	off -= int64(len(ic.prog))
+	ic.allocMem(off)
+	return ic.mem[off]
 }
 
 func (ic *intcode) set(val int64, mode int) {
-	param := ic.mem[ic.pc]
+	param := ic.prog[ic.pc]
 	ic.pc++
+	off := param
 	switch mode {
 	case 0:
-		ic.mem[param] = val
 	case 1:
 		panic("write to immediate")
 	case 2:
-		ic.mem[ic.relBase+param] = val
+		off += ic.relBase
 	default:
 		panic("bad mode")
 	}
+	if off < int64(len(ic.prog)) {
+		ic.prog[off] = val
+		return
+	}
+	off -= int64(len(ic.prog))
+	ic.allocMem(off)
+	ic.mem[off] = val
+}
+
+func (ic *intcode) allocMem(off int64) {
+	if off < int64(len(ic.mem)) {
+		return
+	}
+	if off >= maxIntcodeMem {
+		panic(fmt.Sprintf("intcode program required more than %d bytes of extra memory", int64(maxIntcodeMem)))
+	}
+	n := int64(len(ic.mem)) * 10
+	if n < off*2 {
+		n = off * 2
+	}
+	if n > maxIntcodeMem {
+		n = maxIntcodeMem
+	}
+	mem := make([]int64, n)
+	copy(mem, ic.mem)
+	ic.mem = mem
 }
 
 var intcodePool sync.Pool
 
-func (ic *intcode) free() {
-	intcodePool.Put(ic)
-}
+func (ic *intcode) free() { intcodePool.Put(ic) }
 
 func (ic *intcode) clone() *intcode {
-	if ic.inCh != nil {
-		panic("cannot clone channel mode intcode")
-	}
 	x := intcodePool.Get()
 	if x == nil {
 		ic1 := *ic
+		ic1.prog = copyInt64s(ic.prog)
 		ic1.mem = copyInt64s(ic.mem)
-		ic1.input = copyInt64s(ic.input)
-		ic1.output = copyInt64s(ic.output)
+		ic1.inBuf = copyInt64s(ic.inBuf)
 		return &ic1
 	}
 
-	cloneInt64s := func(p0, p1 *[]int64) {
-		if cap(*p0) < len(*p1) {
-			*p0 = make([]int64, len(*p1))
+	cloneInt64s := func(p *[]int64, ns []int64) {
+		if cap(*p) < len(ns) {
+			*p = make([]int64, len(ns))
 		} else {
-			*p0 = (*p0)[:len(*p1)]
+			*p = (*p)[:len(ns)]
 		}
-		copy(*p0, *p1)
+		copy(*p, ns)
 	}
 
 	ic1 := x.(*intcode)
-	cloneInt64s(&ic1.mem, &ic.mem)
-	cloneInt64s(&ic1.input, &ic.input)
-	cloneInt64s(&ic1.output, &ic.output)
+	cloneInt64s(&ic1.prog, ic.prog)
+	cloneInt64s(&ic1.mem, ic.mem)
 	ic1.pc = ic.pc
 	ic1.relBase = ic.relBase
-	ic1.suspendMode = ic.suspendMode
+	ic1.opt = ic.opt
+	ic1.in = ic.in
+	cloneInt64s(&ic1.inBuf, ic.inBuf)
+	ic1.out = ic.out
 	return ic1
+}
+
+func copyInt64s(s []int64) []int64 {
+	return append([]int64(nil), s...)
 }
