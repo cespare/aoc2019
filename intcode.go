@@ -121,7 +121,7 @@ func (ic *intcode) setInput(ns ...int64) {
 	if ic.opt&optRun != 0 {
 		panic("setInitialInput called after run was called")
 	}
-	ic.inBuf = ns
+	ic.inBuf = append(ic.inBuf, ns...)
 }
 
 func (ic *intcode) setOutputAll(p *[]int64) {

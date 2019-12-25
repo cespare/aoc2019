@@ -1,12 +1,5 @@
 package main
 
-import (
-	"log"
-	"sync"
-	"sync/atomic"
-	"time"
-)
-
 func init() {
 	addSolutions(23, problem23)
 }
@@ -15,128 +8,118 @@ func problem23(ctx *problemContext) {
 	prog := readProg(ctx.f)
 	ctx.reportLoad()
 
-	start := make(chan struct{})
-	nw := newNetwork(50)
-	for addr := int64(0); addr < 50; addr++ {
-		c := nw.addComputer(prog, addr)
-		go func() {
-			<-start
-			c.ic.run()
-			log.Panicf("computer %d halted", c.addr)
-		}()
+	nw := newNetwork(prog, 50)
+	reportedPart1 := false
+	for {
+		if part2 := nw.step(); part2 >= 0 {
+			ctx.reportPart2(part2)
+			return
+		}
+		if !reportedPart1 && nw.firstNAT != nil {
+			ctx.reportPart1(nw.firstNAT.y)
+			reportedPart1 = true
+		}
 	}
-	close(start)
-	nw.monitor()
 }
 
 type network struct {
-	cs      []*netComputer
-	natMu   sync.Mutex
-	nat     *packet
-	lastNAT *packet
+	cs []*netComputer
+
+	nat         *packet
+	firstNAT    *packet
+	prevNATYVal int64
 }
 
-func newNetwork(n int) *network {
-	nw := &network{cs: make([]*netComputer, n)}
+func newNetwork(prog []int64, n int) *network {
+	nw := &network{
+		cs: make([]*netComputer, n),
+	}
+	for i := range nw.cs {
+		ic := newIntcode(prog)
+		addr := int64(i)
+		c := &netComputer{
+			nw:   nw,
+			addr: addr,
+			ic:   ic,
+		}
+		ic.setInput(addr)
+		ic.in = c.in
+		ic.out = c.out
+		nw.cs[i] = c
+	}
 	return nw
 }
 
-func (nw *network) monitor() {
-	for {
-		log.Println("Waiting for idle...")
-	idleLoop:
-		for {
-			nw.natMu.Lock()
-			natSet := nw.nat != nil
-			nw.natMu.Unlock()
-			if !natSet {
-				time.Sleep(10 * time.Millisecond)
-				continue
-			}
-			for _, c := range nw.cs {
-				if atomic.LoadInt64(&c.idle) < 1000 {
-					time.Sleep(time.Millisecond)
-					continue idleLoop
-				}
-			}
+func (nw *network) step() (part2 int64) {
+	idle := true
+	for _, c := range nw.cs {
+		if c.idleIn < 100 || c.cyclesSinceOut < 100 {
+			idle = false
 			break
 		}
-		nw.natMu.Lock()
-		if nw.nat != nil && nw.lastNAT != nil && nw.nat.y == nw.lastNAT.y {
-			log.Panicln("part 2:", nw.nat.y)
-		}
-		nw.lastNAT = nw.nat
-		nat := nw.nat
-		nw.nat = nil
-		nw.natMu.Unlock()
-		log.Printf("{%d, %d}", nat.x, nat.y)
-		c0 := nw.cs[0]
-		c0.mu.Lock()
-		c0.in = append(c0.in, nat.x, nat.y)
-		c0.mu.Unlock()
 	}
+	if nw.nat == nil {
+		idle = false
+	}
+	if idle {
+		if nw.nat.y == nw.prevNATYVal {
+			return nw.nat.y
+		}
+		nw.prevNATYVal = nw.nat.y
+		nw.cs[0].ic.setInput(nw.nat.x, nw.nat.y)
+	}
+	for _, c := range nw.cs {
+		if idle {
+			c.idleIn = 0
+		}
+		c.cyclesSinceOut++
+		c.step()
+	}
+	return -1
 }
 
 type netComputer struct {
 	nw   *network
 	addr int64
-	mu   sync.Mutex
-	in   []int64
-	out  []int64
-	idle int64
 	ic   *intcode
-}
 
-func (nw *network) addComputer(prog []int64, addr int64) *netComputer {
-	c := &netComputer{
-		nw:   nw,
-		addr: addr,
-	}
-	nw.cs[addr] = c
-	c.ic = newIntcode(prog)
-	c.ic.setInput(addr)
-	c.ic.in = func(buf []int64) []int64 {
-		if addr >= 0 {
-			buf = append(buf, addr)
-			addr = -1
-			return buf
-		}
-		c.mu.Lock()
-		if len(c.in) > 0 {
-			atomic.SwapInt64(&c.idle, 0)
-			buf = append(buf, c.in...)
-			c.in = c.in[:0]
-			c.mu.Unlock()
-			return buf
-		}
-		c.mu.Unlock()
-		time.Sleep(500 * time.Microsecond)
-		atomic.AddInt64(&c.idle, 1)
-		return append(buf, -1)
-	}
-	c.ic.out = func(v int64) {
-		c.out = append(c.out, v)
-		if len(c.out) < 3 {
-			return
-		}
-		addr, x, y := c.out[0], c.out[1], c.out[2]
-		// log.Printf("computer %d sending {%d, %d} to %d", c.addr, x, y, addr)
-		c.out = c.out[:0]
-		if addr == 255 {
-			c.nw.natMu.Lock()
-			c.nw.nat = &packet{x, y}
-			c.nw.natMu.Unlock()
-			return
-		}
-		peer := c.nw.cs[addr]
-		peer.mu.Lock()
-		peer.in = append(peer.in, x, y)
-		peer.mu.Unlock()
-	}
-	return c
+	outBuf         []int64
+	idleIn         int
+	cyclesSinceOut int
 }
 
 type packet struct {
 	x int64
 	y int64
+}
+
+func (c *netComputer) in(buf []int64) []int64 {
+	c.idleIn++
+	return append(buf, -1)
+}
+
+func (c *netComputer) out(v int64) {
+	c.cyclesSinceOut = 0
+	c.outBuf = append(c.outBuf, v)
+	if len(c.outBuf) < 3 {
+		return
+	}
+	addr, x, y := c.outBuf[0], c.outBuf[1], c.outBuf[2]
+	c.outBuf = c.outBuf[:0]
+	if addr == 255 {
+		p := &packet{x: x, y: y}
+		c.nw.nat = p
+		if c.nw.firstNAT == nil {
+			c.nw.firstNAT = p
+		}
+		return
+	}
+	peer := c.nw.cs[addr]
+	peer.ic.setInput(x, y)
+}
+
+func (c *netComputer) step() {
+	if c.ic.step(false) == stateHalt {
+		panic("unexpected halt")
+	}
 }
