@@ -1,0 +1,16 @@
++ B boulder
+- M mutex
++ C cake
+- P pointer
+- F fuel cell
++ A antenna
+- T tambourine
++ N coin
+
+1. Need B. Everything else together is too light.
+2. No M; B+M is too heavy.
+3. Need A: B + (everything else except A) is too light.
+4. Need C: B + A + (everything else except C) is too light.
+5. Need N: B + A + C (everything else except N) is too light.
+6. No P: B+A+C+N+P is too heavy.
+6. No F: B+A+C+N+F is too heavy.

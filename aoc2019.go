@@ -50,7 +50,7 @@ func main() {
 
 	cpuProfile := flag.String("cpuprofile", "", "write CPU profile to `file`")
 	printTimings := flag.Bool("t", false, "print timings")
-	readStdin := flag.Bool("stdin", false, "read from stdin instead of default file")
+	filename := flag.String("f", "", "read from `file` instead of the default (or \"-\" for stdin)")
 	flag.Parse()
 
 	if *printTimings && *cpuProfile != "" {
@@ -67,7 +67,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	ctx, err := newProblemContext(problem, *readStdin)
+	ctx, err := newProblemContext(problem, *filename)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -148,21 +148,23 @@ func (ctx *problemContext) printTimings() {
 	}
 }
 
-func newProblemContext(n int, readStdin bool) (*problemContext, error) {
+func newProblemContext(n int, name string) (*problemContext, error) {
 	ctx := &problemContext{
 		l: log.New(os.Stdout, "", 0),
 	}
-	if readStdin {
+	if name == "-" {
 		ctx.f = os.Stdin
-	} else {
-		name := fmt.Sprintf("%d.txt", n)
-		f, err := os.Open(name)
-		if err != nil {
-			return nil, err
-		}
-		ctx.f = f
-		ctx.needClose = true
+		return ctx, nil
 	}
+	if name == "" {
+		name = fmt.Sprintf("%d.txt", n)
+	}
+	f, err := os.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	ctx.f = f
+	ctx.needClose = true
 	return ctx, nil
 }
 

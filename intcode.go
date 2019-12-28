@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -198,14 +199,15 @@ func (ic *intcode) step(waitForInput bool) intcodeState {
 		ic.set(a*b, modes[2])
 	case opInput:
 		if len(ic.inBuf) == 0 {
+			ic.pc--
 			if waitForInput {
-				ic.pc--
 				return stateSuspend
 			}
 			ic.inBuf = ic.in(ic.inBuf)
 			if len(ic.inBuf) == 0 {
 				panic("ic.in gave no input")
 			}
+			ic.pc++
 		}
 		v := ic.inBuf[0]
 		ic.inBuf = ic.inBuf[1:]
@@ -349,4 +351,33 @@ func (ic *intcode) clone() *intcode {
 
 func copyInt64s(s []int64) []int64 {
 	return append([]int64(nil), s...)
+}
+
+type intcodeSnapshot struct {
+	Prog    []int64
+	Mem     []int64
+	PC      int64
+	RelBase int64
+}
+
+func (ic *intcode) save(w io.Writer) error {
+	snap := intcodeSnapshot{
+		Prog:    ic.prog,
+		Mem:     ic.mem,
+		PC:      ic.pc,
+		RelBase: ic.relBase,
+	}
+	return json.NewEncoder(w).Encode(snap)
+}
+
+func (ic *intcode) load(r io.Reader) error {
+	var snap intcodeSnapshot
+	if err := json.NewDecoder(r).Decode(&snap); err != nil {
+		return err
+	}
+	ic.prog = snap.Prog
+	ic.mem = snap.Mem
+	ic.pc = snap.PC
+	ic.relBase = snap.RelBase
+	return nil
 }
